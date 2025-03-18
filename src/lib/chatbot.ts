@@ -70,7 +70,7 @@ const callOpenAI = async (
           {
             role: 'system',
             content: useJson 
-              ? 'You are a helpful assistant that responds in valid JSON format.' 
+              ? 'You are a helpful assistant that responds in valid JSON format. Make sure your response is properly formatted JSON that can be parsed with JSON.parse(). Always include the property names in double quotes.' 
               : 'You are a helpful assistant.'
           },
           {
@@ -89,16 +89,46 @@ const callOpenAI = async (
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    const resultText = data.choices[0].message.content;
+    
+    // For JSON responses, try to extract valid JSON if it's wrapped in backticks or has extra text
+    if (useJson) {
+      try {
+        // First try direct parsing
+        return JSON.parse(resultText);
+      } catch (e) {
+        // If direct parsing fails, try to extract JSON from the text
+        const jsonMatch = resultText.match(/```json\s*([\s\S]*?)\s*```/) || 
+                        resultText.match(/```\s*([\s\S]*?)\s*```/) ||
+                        resultText.match(/(\{[\s\S]*\})/);
+        
+        if (jsonMatch && jsonMatch[1]) {
+          try {
+            return JSON.parse(jsonMatch[1]);
+          } catch (e2) {
+            console.error('Failed to parse extracted JSON:', e2);
+          }
+        }
+        
+        // If we couldn't extract valid JSON, return a fallback
+        console.error('Failed to parse response as JSON, returning fallback');
+        return JSON.stringify({
+          serverName: "sequential-thinking",
+          reasoning: "Fallback selection due to JSON parsing error"
+        });
+      }
+    }
+    
+    return resultText;
   } catch (error) {
     console.error('Error calling OpenAI:', error);
     
     // Fallback to mock response for demo purposes
-    if (useJson && prompt.includes('choose MCP server')) {
+    if (useJson) {
       // Get a random server name from the mcpConfigs
       return JSON.stringify({
         serverName: "sequential-thinking",
-        reasoning: `Selected sequential-thinking because it's the most relevant for this query.`
+        reasoning: `Selected sequential-thinking because it's the most reliable fallback option.`
       });
     } else if (prompt.includes('execute MCP call')) {
       return `Result from MCP server: Here's the information you requested about "${prompt.split(' ').slice(-3).join(' ')}"`;
@@ -134,16 +164,25 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       Return a JSON object with:
       - serverName: the name of the chosen server
       - reasoning: brief explanation of why this server was chosen
+      
+      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse().
     `;
     
     setLogs(`🧠 *Generating prompt for server selection...*`);
     setLogs(`📤 *Sending request to LLM for server selection...*`);
     
-    const response = await callOpenAI(prompt, apiKey, true);
-    setLogs(`📥 *Received response from LLM for server selection*`);
-    
+    let result;
     try {
-      const result = JSON.parse(response);
+      const response = await callOpenAI(prompt, apiKey, true);
+      setLogs(`📥 *Received response from LLM for server selection*`);
+      
+      if (typeof response === 'string') {
+        result = JSON.parse(response);
+      } else {
+        // Response is already parsed
+        result = response;
+      }
+      
       const selectionLog = `✅ *MCP server selected: ${result.serverName}*`;
       const reasoningLog = `💡 *Selection reasoning: ${result.reasoning}*`;
       console.log(selectionLog);
@@ -154,7 +193,6 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
     } catch (e) {
       console.error('Failed to parse LLM response:', e);
       setLogs(`⚠️ *Error parsing LLM response: ${e instanceof Error ? e.message : String(e)}*`);
-      setLogs(`📄 *Raw response: ${response}*`);
       
       // Return the first server as fallback
       const firstServerName = Object.keys(mcpConfigs)[0];
@@ -185,39 +223,50 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
       return `Error: Could not find MCP server configuration for ${serverName}`;
     }
     
-    const mcpContext = createMCPContext(serverConfig);
-    const contextLog = `🔧 *MCP context created with config:*`;
-    console.log(contextLog);
-    console.log(serverConfig);
-    setLogs(contextLog);
-    setLogs(`📋 *${JSON.stringify(serverConfig, null, 2)}*`);
-    
-    const prompt = `
-      You have access to the ${serverName} MCP server with these commands:
-      ${JSON.stringify(serverConfig)}
+    try {
+      const mcpContext = createMCPContext(serverConfig);
+      const contextLog = `🔧 *MCP context created for '${serverName}' server*`;
+      const configLog = `📋 *Server config: ${JSON.stringify(serverConfig, null, 2)}*`;
+      console.log(contextLog);
+      console.log(serverConfig);
+      setLogs(contextLog);
+      setLogs(configLog);
       
-      Based on the chat history and latest message, determine which command to use and what arguments to provide.
+      // Add logs for the actual user query
+      setLogs(`📝 *User query: "${latestMessage}"*`);
       
-      Chat History:
-      ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+      const prompt = `
+        You have access to the ${serverName} MCP server with these commands:
+        ${JSON.stringify(serverConfig)}
+        
+        Based on the chat history and latest message, determine which command to use and what arguments to provide.
+        
+        Chat History:
+        ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+        
+        Latest Message: ${latestMessage}
+        
+        Return a detailed explanation of what information you would retrieve from the server for this query.
+      `;
       
-      Latest Message: ${latestMessage}
+      setLogs(`🧠 *Generating prompt for MCP execution...*`);
+      setLogs(`📤 *Sending request to LLM for MCP execution...*`);
       
-      Return a detailed explanation of what information you would retrieve from the server for this query.
-    `;
-    
-    setLogs(`🧠 *Generating prompt for MCP execution...*`);
-    setLogs(`📤 *Sending request to LLM for MCP execution...*`);
-    
-    // In a real implementation, this would call LLM with MCP tools
-    const response = await callOpenAI(prompt, apiKey);
-    
-    setLogs(`📥 *Received response from LLM for MCP execution*`);
-    const completionLog = `✅ *MCP execution completed with response length: ${response.length} characters*`;
-    console.log(completionLog);
-    setLogs(completionLog);
-    
-    return response;
+      // In a real implementation, this would call LLM with MCP tools
+      const response = await callOpenAI(prompt, apiKey);
+      
+      setLogs(`📥 *Received MCP execution response (${response.length} chars)*`);
+      const snippetLog = `📄 *Response snippet: "${response.substring(0, 50)}..."*`;
+      console.log(snippetLog);
+      setLogs(snippetLog);
+      
+      return response;
+    } catch (error) {
+      const errorMessage = `❌ *MCP execution error: ${error instanceof Error ? error.message : String(error)}*`;
+      console.error(errorMessage);
+      setLogs(errorMessage);
+      return `Error executing MCP call: ${error instanceof Error ? error.message : String(error)}`;
+    }
   }
 );
 
@@ -245,14 +294,21 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
     setLogs(`🧠 *Generating prompt for response formatting...*`);
     setLogs(`📤 *Sending request to LLM for response formatting...*`);
     
-    const response = await callOpenAI(prompt, apiKey);
-    
-    setLogs(`📥 *Received response from LLM for formatting*`);
-    const completeLog = '✅ *Response formatting complete*';
-    console.log(completeLog);
-    setLogs(completeLog);
-    
-    return response;
+    try {
+      const response = await callOpenAI(prompt, apiKey);
+      
+      setLogs(`📥 *Received formatted response (${response.length} chars)*`);
+      const snippetLog = `📄 *Response snippet: "${response.substring(0, 50)}..."*`;
+      console.log(snippetLog);
+      setLogs(snippetLog);
+      
+      return response;
+    } catch (error) {
+      const errorMessage = `❌ *Response formatting error: ${error instanceof Error ? error.message : String(error)}*`;
+      console.error(errorMessage);
+      setLogs(errorMessage);
+      return `I encountered an error while formatting my response. Please try asking your question again in a different way.`;
+    }
   }
 );
 
@@ -266,45 +322,55 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
     setLogs(startLog);
     setLogs(messageLog);
     
-    // Step 1: Choose the appropriate MCP server
-    const { serverName, reasoning } = await ChooseMCPServer({
-      chatHistory,
-      latestMessage,
-      mcpConfigs,
-      apiKey,
-      setLogs
-    });
-    
-    const selectedLog = `🎯 *Selected MCP server: ${serverName}*`;
-    const reasoningLog = `💭 *Reasoning: ${reasoning}*`;
-    console.log(selectedLog);
-    console.log(reasoningLog);
-    setLogs(selectedLog);
-    setLogs(reasoningLog);
-    
-    // Step 2: Execute the MCP call
-    const mcpResult = await ExecuteMCPCall({
-      serverName,
-      chatHistory,
-      latestMessage,
-      mcpConfigs,
-      apiKey,
-      setLogs
-    });
-    
-    // Step 3: Format the response
-    const response = await FormatResponse({
-      chatHistory,
-      latestMessage,
-      mcpResult,
-      apiKey,
-      setLogs
-    });
-    
-    const completeLog = '🏁 *==== Chatbot Process Complete ====*';
-    console.log(completeLog);
-    setLogs(completeLog);
-    return response;
+    try {
+      // Step 1: Choose the appropriate MCP server
+      setLogs(`⚙️ *STEP 1: Selecting appropriate MCP server...*`);
+      const { serverName, reasoning } = await ChooseMCPServer({
+        chatHistory,
+        latestMessage,
+        mcpConfigs,
+        apiKey,
+        setLogs
+      });
+      
+      const selectedLog = `🎯 *Selected MCP server: ${serverName}*`;
+      const reasoningLog = `💭 *Reasoning: ${reasoning}*`;
+      console.log(selectedLog);
+      console.log(reasoningLog);
+      setLogs(selectedLog);
+      setLogs(reasoningLog);
+      
+      // Step 2: Execute the MCP call
+      setLogs(`⚙️ *STEP 2: Executing MCP call with ${serverName}...*`);
+      const mcpResult = await ExecuteMCPCall({
+        serverName,
+        chatHistory,
+        latestMessage,
+        mcpConfigs,
+        apiKey,
+        setLogs
+      });
+      
+      // Step 3: Format the response
+      setLogs(`⚙️ *STEP 3: Formatting final response...*`);
+      const response = await FormatResponse({
+        chatHistory,
+        latestMessage,
+        mcpResult,
+        apiKey,
+        setLogs
+      });
+      
+      const completeLog = '🏁 *==== Chatbot Process Complete ====*';
+      console.log(completeLog);
+      setLogs(completeLog);
+      return response;
+    } catch (error) {
+      const errorLog = `❌ *ERROR: ${error instanceof Error ? error.message : String(error)}*`;
+      console.error(errorLog);
+      setLogs(errorLog);
+      return `Sorry, I encountered an error while processing your request: ${error instanceof Error ? error.message : String(error)}`;
+    }
   }
 );
 
@@ -318,7 +384,12 @@ export const processMessage = async (
   try {
     // Fetch the config from the server
     const response = await fetch('/config.json');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch configuration: ${response.statusText}`);
+    }
+    
     const { mcpServers } = await response.json();
+    setLogs(`📚 *Loaded MCP server configurations: ${Object.keys(mcpServers).join(', ')}*`);
     
     return await Chatbot({
       chatHistory,

@@ -17,7 +17,7 @@ export const ChatUI: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('openai_api_key'));
   const [logs, setLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(true); // Changed to true by default
+  const [showLogs, setShowLogs] = useState(true); // True by default
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -37,7 +37,7 @@ export const ChatUI: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, logs]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -61,6 +61,7 @@ export const ChatUI: React.FC = () => {
   };
 
   const addLog = (log: string) => {
+    console.log("Adding log:", log); // Debug
     setLogs(prevLogs => [...prevLogs, log]);
   };
 
@@ -84,14 +85,22 @@ export const ChatUI: React.FC = () => {
     clearLogs();
     
     try {
-      const response = await processMessage(messages, userMessage.content, apiKey, addLog);
+      console.log("Processing user message:", userMessage.content);
+      const response = await processMessage(
+        messages, 
+        userMessage.content, 
+        apiKey, 
+        addLog
+      );
+      console.log("Received response:", response);
+      console.log("Final logs:", logs);
       
       const assistantMessage: Message = {
         role: 'assistant',
         content: response
       };
 
-      // Always include logs in a system message if logs are present
+      // Create system message with logs if logs are present
       if (logs.length > 0) {
         const systemMessage: Message = {
           role: 'system',
@@ -214,9 +223,9 @@ export const ChatUI: React.FC = () => {
             <Terminal size={14} className="mr-1 text-muted-foreground" />
             <span className="text-xs font-semibold text-muted-foreground">Live Process Logs</span>
           </div>
-          <div className="max-h-32 overflow-y-auto text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+          <div className="max-h-[200px] overflow-y-auto text-xs font-mono text-muted-foreground whitespace-pre-wrap">
             {logs.map((log, i) => (
-              <div key={i} className="mb-1">{log}</div>
+              <div key={i} className="mb-1 leading-relaxed">{log}</div>
             ))}
           </div>
         </div>
