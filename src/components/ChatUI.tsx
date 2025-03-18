@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, processMessage } from '@/lib/chatbot';
 import { cn } from '@/lib/utils';
-import { Send, Info, ArrowDown, Key } from 'lucide-react';
+import { Send, Info, ArrowDown, Key, Terminal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ApiKeyInput } from './ApiKeyInput';
 
@@ -16,6 +16,8 @@ export const ChatUI: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('openai_api_key'));
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -58,6 +60,14 @@ export const ChatUI: React.FC = () => {
     });
   };
 
+  const addLog = (log: string) => {
+    setLogs(prevLogs => [...prevLogs, log]);
+  };
+
+  const clearLogs = () => {
+    setLogs([]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -71,16 +81,29 @@ export const ChatUI: React.FC = () => {
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+    clearLogs();
     
     try {
-      const response = await processMessage(messages, userMessage.content, apiKey);
+      const response = await processMessage(messages, userMessage.content, apiKey, addLog);
       
       const assistantMessage: Message = {
         role: 'assistant',
         content: response
       };
-      
-      setMessages(prev => [...prev, assistantMessage]);
+
+      // Show logs in system message if any
+      if (logs.length > 0) {
+        setMessages(prev => [...prev, 
+          userMessage, 
+          {
+            role: 'system',
+            content: logs.join('\n')
+          },
+          assistantMessage
+        ]);
+      } else {
+        setMessages(prev => [...prev, userMessage, assistantMessage]);
+      }
     } catch (error) {
       console.error('Error processing message:', error);
       toast({
@@ -117,10 +140,23 @@ export const ChatUI: React.FC = () => {
         "py-3 px-4 rounded-2xl max-w-[85%] mb-4 animate-slide-up",
         message.role === 'assistant' 
           ? "bg-secondary/70 text-secondary-foreground mr-auto chat-message-in" 
-          : "bg-primary text-primary-foreground ml-auto chat-message-out"
+          : message.role === 'system'
+            ? "bg-muted/80 text-muted-foreground mx-auto w-full font-mono text-xs overflow-x-auto whitespace-pre"
+            : "bg-primary text-primary-foreground ml-auto chat-message-out"
       )}
     >
-      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+      {message.role === 'system' ? (
+        <div className="flex items-center mb-1">
+          <Terminal size={12} className="mr-1" />
+          <span className="text-xs font-semibold">System Logs</span>
+        </div>
+      ) : null}
+      <p className={cn(
+        "text-sm whitespace-pre-wrap",
+        message.role === 'system' && "italic"
+      )}>
+        {message.content}
+      </p>
     </div>
   ));
 
@@ -194,17 +230,28 @@ export const ChatUI: React.FC = () => {
         </div>
 
         <div className="flex justify-between mt-2">
-          <button
-            type="button"
-            onClick={() => toast({
-              title: "About this chatbot",
-              description: "This is a GenSX chatbot with MCP integration, designed to help you with various tasks by connecting to different service providers.",
-            })}
-            className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Info size={12} className="mr-1" />
-            About this chatbot
-          </button>
+          <div className="flex items-center space-x-4">
+            <button
+              type="button"
+              onClick={() => toast({
+                title: "About this chatbot",
+                description: "This is a GenSX chatbot with MCP integration, designed to help you with various tasks by connecting to different service providers.",
+              })}
+              className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Info size={12} className="mr-1" />
+              About this chatbot
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowLogs(!showLogs)}
+              className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Terminal size={12} className="mr-1" />
+              {showLogs ? "Hide logs" : "Show logs"}
+            </button>
+          </div>
           
           <button
             type="button"
