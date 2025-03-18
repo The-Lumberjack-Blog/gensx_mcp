@@ -1,4 +1,3 @@
-
 import gensx from './gensx';
 import { MCPConfig, createMCPContext } from './mcp';
 
@@ -176,16 +175,26 @@ export const EvaluateQuery = gensx.Component<EvaluateQueryProps, EvaluateQueryOu
       Available MCP Servers:
       ${serverDescriptions}
       
-      First, determine if this query requires accessing external data or services via an MCP server.
-      If the query is a simple greeting, general question, chitchat, or can be answered with your general knowledge, NO MCP server is needed.
-      If the query requires specific data access, external API calls, or integration with specialized tools, an MCP server IS needed.
+      CAREFULLY EVALUATE whether this query requires accessing external data or services via an MCP server.
+      Consider whether using one of the available MCP servers would SIGNIFICANTLY IMPROVE the quality, accuracy, or relevance of the response.
+      
+      If ANY of these conditions apply, an MCP server IS needed:
+      1. The query requires specific data access that isn't part of your general knowledge
+      2. The query would benefit from specialized tools or APIs
+      3. The user is asking for real-time information or data processing
+      4. The request requires integration with external systems
+      5. The query involves domain-specific knowledge that an MCP server provides
+      
+      If the query is a simple greeting, general question, opinion, chitchat, or can be fully answered with your general knowledge, NO MCP server is needed.
+      
+      Evaluate carefully - if there's any doubt, evaluate which approach would give the best user experience.
       
       Return a JSON object with:
       - needsMCP: boolean indicating if an MCP server is needed (true/false)
       - serverName: (only if needsMCP is true) name of the chosen server
-      - reasoning: brief explanation of your decision
+      - reasoning: detailed explanation of your decision, including why a particular server was chosen or why MCP is not needed
       
-      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse().
+      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse(). Do NOT wrap it in markdown code blocks.
     `;
     
     setLogs(`🧠 *Generating prompt for query evaluation...*`);
@@ -470,3 +479,4 @@ export const processMessage = async (
     return 'Sorry, there was an error processing your request. Please check your API key and try again.';
   }
 };
+
