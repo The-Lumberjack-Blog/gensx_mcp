@@ -10,7 +10,7 @@ export interface Message {
 interface ChooseMCPServerProps {
   chatHistory: Message[];
   latestMessage: string;
-  mcpConfigs: MCPConfig[];
+  mcpConfigs: Record<string, any>;
   apiKey: string | null;
 }
 
@@ -23,7 +23,7 @@ interface ExecuteMCPCallProps {
   serverName: string;
   chatHistory: Message[];
   latestMessage: string;
-  mcpConfigs: MCPConfig[];
+  mcpConfigs: Record<string, any>;
   apiKey: string | null;
 }
 
@@ -37,7 +37,7 @@ interface FormatResponseProps {
 interface ChatbotProps {
   chatHistory: Message[];
   latestMessage: string;
-  mcpConfigs: MCPConfig[];
+  mcpConfigs: Record<string, any>;
   apiKey: string | null;
 }
 
@@ -91,10 +91,10 @@ const callOpenAI = async (
     
     // Fallback to mock response for demo purposes
     if (useJson && prompt.includes('choose MCP server')) {
-      const randomServer = ['weather-mcp', 'search-mcp', 'calendar-mcp'][Math.floor(Math.random() * 3)];
+      // Get a random server name from the mcpConfigs
       return JSON.stringify({
-        serverName: randomServer,
-        reasoning: `Selected ${randomServer} because it's the most relevant for this query.`
+        serverName: "sequential-thinking",
+        reasoning: `Selected sequential-thinking because it's the most relevant for this query.`
       });
     } else if (prompt.includes('execute MCP call')) {
       return `Result from MCP server: Here's the information you requested about "${prompt.split(' ').slice(-3).join(' ')}"`;
@@ -107,6 +107,11 @@ const callOpenAI = async (
 // Component to choose the appropriate MCP server
 export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPServerOutput>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey }) => {
+    // Convert the mcpConfigs object to a format we can use in the prompt
+    const serverDescriptions = Object.entries(mcpConfigs).map(([name, config]) => 
+      `${name}: ${JSON.stringify(config)}`
+    ).join('\n');
+    
     const prompt = `
       Given the following chat history and latest message, choose the most appropriate MCP server to handle the request.
       
@@ -116,7 +121,7 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       Latest Message: ${latestMessage}
       
       Available MCP Servers:
-      ${mcpConfigs.map(config => `${config.name}: ${config.description}`).join('\n')}
+      ${serverDescriptions}
       
       Return a JSON object with:
       - serverName: the name of the chosen server
@@ -129,8 +134,10 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       return JSON.parse(response);
     } catch (e) {
       console.error('Failed to parse LLM response:', e);
+      // Return the first server as fallback
+      const firstServerName = Object.keys(mcpConfigs)[0];
       return {
-        serverName: mcpConfigs[0].name,
+        serverName: firstServerName,
         reasoning: 'Fallback to default server due to parsing error'
       };
     }
@@ -140,7 +147,7 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
 // Component to execute the MCP call
 export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
   async ({ serverName, chatHistory, latestMessage, mcpConfigs, apiKey }) => {
-    const serverConfig = mcpConfigs.find(config => config.name === serverName);
+    const serverConfig = mcpConfigs[serverName];
     
     if (!serverConfig) {
       return `Error: Could not find MCP server configuration for ${serverName}`;
@@ -150,7 +157,7 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
     
     const prompt = `
       You have access to the ${serverName} MCP server with these commands:
-      ${JSON.stringify(serverConfig.commands)}
+      ${JSON.stringify(serverConfig)}
       
       Based on the chat history and latest message, determine which command to use and what arguments to provide.
       
@@ -234,7 +241,7 @@ export const processMessage = async (
   apiKey: string | null
 ): Promise<string> => {
   try {
-    // In a real app, we would fetch the config from the server
+    // Fetch the config from the server
     const response = await fetch('/config.json');
     const { mcpServers } = await response.json();
     
