@@ -1,4 +1,3 @@
-
 import gensx from './gensx';
 import { MCPConfig, createMCPContext } from './mcp';
 
@@ -45,12 +44,11 @@ interface ChatbotProps {
   setLogs: (log: string) => void;
 }
 
-// LLM call function that uses OpenAI API
 const callOpenAI = async (
   prompt: string, 
   apiKey: string | null, 
   useJson: boolean = false
-): Promise<string> => {
+): Promise<any> => {
   if (!apiKey) {
     throw new Error("OpenAI API key is required");
   }
@@ -65,12 +63,12 @@ const callOpenAI = async (
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',  // Using a more affordable model for most operations
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
             content: useJson 
-              ? 'You are a helpful assistant that responds in valid JSON format. Make sure your response is properly formatted JSON that can be parsed with JSON.parse(). Always include the property names in double quotes.' 
+              ? 'You are a helpful assistant that responds in valid JSON format. Make sure your response is properly formatted JSON that can be parsed with JSON.parse(). Always include the property names in double quotes. DO NOT include markdown code blocks in your response.' 
               : 'You are a helpful assistant.'
           },
           {
@@ -78,7 +76,7 @@ const callOpenAI = async (
             content: prompt
           }
         ],
-        temperature: useJson ? 0.1 : 0.7, // Lower temperature for JSON responses
+        temperature: useJson ? 0.1 : 0.7,
         max_tokens: 1000
       })
     });
@@ -91,31 +89,45 @@ const callOpenAI = async (
     const data = await response.json();
     const resultText = data.choices[0].message.content;
     
-    // For JSON responses, try to extract valid JSON if it's wrapped in backticks or has extra text
+    console.log('Raw LLM response:', resultText);
+    
     if (useJson) {
       try {
         // First try direct parsing
         return JSON.parse(resultText);
       } catch (e) {
+        console.log('Direct JSON parsing failed, trying to extract JSON from the text');
+        
         // If direct parsing fails, try to extract JSON from the text
         const jsonMatch = resultText.match(/```json\s*([\s\S]*?)\s*```/) || 
-                        resultText.match(/```\s*([\s\S]*?)\s*```/) ||
-                        resultText.match(/(\{[\s\S]*\})/);
+                         resultText.match(/```\s*([\s\S]*?)\s*```/) ||
+                         resultText.match(/(\{[\s\S]*\})/);
         
         if (jsonMatch && jsonMatch[1]) {
+          const extractedJson = jsonMatch[1].trim();
+          console.log('Extracted potential JSON:', extractedJson);
+          
           try {
-            return JSON.parse(jsonMatch[1]);
+            return JSON.parse(extractedJson);
           } catch (e2) {
             console.error('Failed to parse extracted JSON:', e2);
+            // Log the raw response for debugging
+            console.error('Raw response:', resultText);
+            
+            // Return the raw match for manual inspection
+            return {
+              serverName: "sequential-thinking",
+              reasoning: "Fallback selection due to JSON parsing error. Raw response: " + resultText.substring(0, 100)
+            };
           }
         }
         
         // If we couldn't extract valid JSON, return a fallback
         console.error('Failed to parse response as JSON, returning fallback');
-        return JSON.stringify({
+        return {
           serverName: "sequential-thinking",
-          reasoning: "Fallback selection due to JSON parsing error"
-        });
+          reasoning: "Fallback selection due to JSON parsing error. No JSON pattern found."
+        };
       }
     }
     
@@ -123,13 +135,11 @@ const callOpenAI = async (
   } catch (error) {
     console.error('Error calling OpenAI:', error);
     
-    // Fallback to mock response for demo purposes
     if (useJson) {
-      // Get a random server name from the mcpConfigs
-      return JSON.stringify({
+      return {
         serverName: "sequential-thinking",
-        reasoning: `Selected sequential-thinking because it's the most reliable fallback option.`
-      });
+        reasoning: `Selected sequential-thinking because it's the most reliable fallback option. Error: ${error instanceof Error ? error.message : String(error)}`
+      };
     } else if (prompt.includes('execute MCP call')) {
       return `Result from MCP server: Here's the information you requested about "${prompt.split(' ').slice(-3).join(' ')}"`;
     } else {
@@ -138,14 +148,12 @@ const callOpenAI = async (
   }
 };
 
-// Component to choose the appropriate MCP server
 export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPServerOutput>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
     const logMessage = '🔍 *Starting MCP server selection process...*';
     console.log(logMessage);
     setLogs(logMessage);
     
-    // Convert the mcpConfigs object to a format we can use in the prompt
     const serverDescriptions = Object.entries(mcpConfigs).map(([name, config]) => 
       `${name}: ${JSON.stringify(config)}`
     ).join('\n');
@@ -165,23 +173,17 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       - serverName: the name of the chosen server
       - reasoning: brief explanation of why this server was chosen
       
-      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse().
+      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse(). DO NOT wrap your response in markdown code blocks or any other formatting.
     `;
     
     setLogs(`🧠 *Generating prompt for server selection...*`);
     setLogs(`📤 *Sending request to LLM for server selection...*`);
     
-    let result;
     try {
       const response = await callOpenAI(prompt, apiKey, true);
       setLogs(`📥 *Received response from LLM for server selection*`);
       
-      if (typeof response === 'string') {
-        result = JSON.parse(response);
-      } else {
-        // Response is already parsed
-        result = response;
-      }
+      const result = response;
       
       const selectionLog = `✅ *MCP server selected: ${result.serverName}*`;
       const reasoningLog = `💡 *Selection reasoning: ${result.reasoning}*`;
@@ -191,10 +193,10 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       setLogs(reasoningLog);
       return result;
     } catch (e) {
-      console.error('Failed to parse LLM response:', e);
-      setLogs(`⚠️ *Error parsing LLM response: ${e instanceof Error ? e.message : String(e)}*`);
+      const errorLog = `⚠️ *Error during server selection: ${e instanceof Error ? e.message : String(e)}*`;
+      console.error(errorLog);
+      setLogs(errorLog);
       
-      // Return the first server as fallback
       const firstServerName = Object.keys(mcpConfigs)[0];
       const fallbackLog = `🔄 *MCP server fallback: ${firstServerName}*`;
       console.log(fallbackLog);
@@ -207,7 +209,6 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
   }
 );
 
-// Component to execute the MCP call
 export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
   async ({ serverName, chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
     const executingLog = `🚀 *Executing MCP call with server: ${serverName}*`;
@@ -232,7 +233,6 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
       setLogs(contextLog);
       setLogs(configLog);
       
-      // Add logs for the actual user query
       setLogs(`📝 *User query: "${latestMessage}"*`);
       
       const prompt = `
@@ -252,7 +252,6 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
       setLogs(`🧠 *Generating prompt for MCP execution...*`);
       setLogs(`📤 *Sending request to LLM for MCP execution...*`);
       
-      // In a real implementation, this would call LLM with MCP tools
       const response = await callOpenAI(prompt, apiKey);
       
       setLogs(`📥 *Received MCP execution response (${response.length} chars)*`);
@@ -270,7 +269,6 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
   }
 );
 
-// Component to format the final response
 export const FormatResponse = gensx.Component<FormatResponseProps, string>(
   async ({ chatHistory, latestMessage, mcpResult, apiKey, setLogs }) => {
     const formattingLog = '📝 *Formatting final response based on MCP result...*';
@@ -312,7 +310,6 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
   }
 );
 
-// Main chatbot component
 export const Chatbot = gensx.Component<ChatbotProps, string>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
     const startLog = '🔄 *==== Starting Chatbot Process ====*';
@@ -323,7 +320,6 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
     setLogs(messageLog);
     
     try {
-      // Step 1: Choose the appropriate MCP server
       setLogs(`⚙️ *STEP 1: Selecting appropriate MCP server...*`);
       const { serverName, reasoning } = await ChooseMCPServer({
         chatHistory,
@@ -340,7 +336,6 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
       setLogs(selectedLog);
       setLogs(reasoningLog);
       
-      // Step 2: Execute the MCP call
       setLogs(`⚙️ *STEP 2: Executing MCP call with ${serverName}...*`);
       const mcpResult = await ExecuteMCPCall({
         serverName,
@@ -351,7 +346,6 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
         setLogs
       });
       
-      // Step 3: Format the response
       setLogs(`⚙️ *STEP 3: Formatting final response...*`);
       const response = await FormatResponse({
         chatHistory,
@@ -374,7 +368,6 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
   }
 );
 
-// Helper function to process a new message
 export const processMessage = async (
   chatHistory: Message[],
   latestMessage: string,
@@ -382,7 +375,6 @@ export const processMessage = async (
   setLogs: (log: string) => void
 ): Promise<string> => {
   try {
-    // Fetch the config from the server
     const response = await fetch('/config.json');
     if (!response.ok) {
       throw new Error(`Failed to fetch configuration: ${response.statusText}`);

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, processMessage } from '@/lib/chatbot';
 import { cn } from '@/lib/utils';
@@ -61,11 +60,12 @@ export const ChatUI: React.FC = () => {
   };
 
   const addLog = (log: string) => {
-    console.log("Adding log:", log); // Debug
+    console.log("DEBUG - Adding log:", log);
     setLogs(prevLogs => [...prevLogs, log]);
   };
 
   const clearLogs = () => {
+    console.log("DEBUG - Clearing logs");
     setLogs([]);
   };
 
@@ -85,15 +85,15 @@ export const ChatUI: React.FC = () => {
     clearLogs();
     
     try {
-      console.log("Processing user message:", userMessage.content);
+      console.log("DEBUG - Processing user message:", userMessage.content);
       const response = await processMessage(
         messages, 
         userMessage.content, 
         apiKey, 
         addLog
       );
-      console.log("Received response:", response);
-      console.log("Final logs:", logs);
+      console.log("DEBUG - Received response:", response);
+      console.log("DEBUG - Final logs length:", logs.length);
       
       const assistantMessage: Message = {
         role: 'assistant',
@@ -102,26 +102,28 @@ export const ChatUI: React.FC = () => {
 
       // Create system message with logs if logs are present
       if (logs.length > 0) {
+        console.log("DEBUG - Creating system message with logs");
         const systemMessage: Message = {
           role: 'system',
           content: logs.join('\n')
         };
         
-        setMessages(prev => [...prev, userMessage, systemMessage, assistantMessage]);
+        setMessages(prev => [...prev, systemMessage, assistantMessage]);
       } else {
-        setMessages(prev => [...prev, userMessage, assistantMessage]);
+        setMessages(prev => [...prev, assistantMessage]);
       }
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('DEBUG - Error processing message:', error);
       
       // If there are logs, show them in a system message
       if (logs.length > 0) {
+        console.log("DEBUG - Creating error system message with logs");
         const systemMessage: Message = {
           role: 'system',
           content: logs.join('\n')
         };
         
-        setMessages(prev => [...prev, userMessage, systemMessage]);
+        setMessages(prev => [...prev, systemMessage]);
       }
       
       toast({
