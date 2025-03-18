@@ -107,6 +107,8 @@ const callOpenAI = async (
 // Component to choose the appropriate MCP server
 export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPServerOutput>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey }) => {
+    console.log('_*Starting MCP server selection process...*_');
+    
     // Convert the mcpConfigs object to a format we can use in the prompt
     const serverDescriptions = Object.entries(mcpConfigs).map(([name, config]) => 
       `${name}: ${JSON.stringify(config)}`
@@ -131,11 +133,15 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
     const response = await callOpenAI(prompt, apiKey, true);
     
     try {
-      return JSON.parse(response);
+      const result = JSON.parse(response);
+      console.log(`_*MCP server selected: ${result.serverName}*_`);
+      console.log(`_*Selection reasoning: ${result.reasoning}*_`);
+      return result;
     } catch (e) {
       console.error('Failed to parse LLM response:', e);
       // Return the first server as fallback
       const firstServerName = Object.keys(mcpConfigs)[0];
+      console.log(`_*MCP server fallback: ${firstServerName}*_`);
       return {
         serverName: firstServerName,
         reasoning: 'Fallback to default server due to parsing error'
@@ -147,13 +153,18 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
 // Component to execute the MCP call
 export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
   async ({ serverName, chatHistory, latestMessage, mcpConfigs, apiKey }) => {
+    console.log(`_*Executing MCP call with server: ${serverName}*_`);
+    
     const serverConfig = mcpConfigs[serverName];
     
     if (!serverConfig) {
+      console.log(`_*Error: MCP server configuration not found for ${serverName}*_`);
       return `Error: Could not find MCP server configuration for ${serverName}`;
     }
     
     const mcpContext = createMCPContext(serverConfig);
+    console.log(`_*MCP context created with config:*_`);
+    console.log(serverConfig);
     
     const prompt = `
       You have access to the ${serverName} MCP server with these commands:
@@ -171,6 +182,7 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
     
     // In a real implementation, this would call LLM with MCP tools
     const response = await callOpenAI(prompt, apiKey);
+    console.log(`_*MCP execution completed with response length: ${response.length} characters*_`);
     
     return response;
   }
@@ -179,6 +191,8 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
 // Component to format the final response
 export const FormatResponse = gensx.Component<FormatResponseProps, string>(
   async ({ chatHistory, latestMessage, mcpResult, apiKey }) => {
+    console.log('_*Formatting final response based on MCP result...*_');
+    
     const prompt = `
       Given the chat history, latest user message, and the result from the MCP server, 
       format a helpful, natural-sounding response to the user.
@@ -194,6 +208,7 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
     `;
     
     const response = await callOpenAI(prompt, apiKey);
+    console.log('_*Response formatting complete*_');
     
     return response;
   }
@@ -202,6 +217,9 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
 // Main chatbot component
 export const Chatbot = gensx.Component<ChatbotProps, string>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey }) => {
+    console.log('_*==== Starting Chatbot Process ====*_');
+    console.log(`_*Processing user message: "${latestMessage}"*_`);
+    
     // Step 1: Choose the appropriate MCP server
     const { serverName, reasoning } = await ChooseMCPServer({
       chatHistory,
@@ -210,8 +228,8 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
       apiKey
     });
     
-    console.log(`Selected MCP server: ${serverName}`);
-    console.log(`Reasoning: ${reasoning}`);
+    console.log(`_*Selected MCP server: ${serverName}*_`);
+    console.log(`_*Reasoning: ${reasoning}*_`);
     
     // Step 2: Execute the MCP call
     const mcpResult = await ExecuteMCPCall({
@@ -230,6 +248,7 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
       apiKey
     });
     
+    console.log('_*==== Chatbot Process Complete ====*_');
     return response;
   }
 );
