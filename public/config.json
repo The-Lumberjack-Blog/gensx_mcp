@@ -1,0 +1,83 @@
+
+{
+  "mcpServers": [
+    {
+      "name": "weather-mcp",
+      "description": "MCP server for retrieving weather information",
+      "commands": [
+        {
+          "name": "getWeather",
+          "description": "Get weather information for a location",
+          "arguments": [
+            {
+              "name": "location",
+              "type": "string",
+              "description": "The location to get weather for",
+              "required": true
+            },
+            {
+              "name": "units",
+              "type": "string",
+              "description": "The units to use (metric/imperial)",
+              "required": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "search-mcp",
+      "description": "MCP server for searching information",
+      "commands": [
+        {
+          "name": "search",
+          "description": "Search for information on a topic",
+          "arguments": [
+            {
+              "name": "query",
+              "type": "string",
+              "description": "The search query",
+              "required": true
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "description": "Maximum number of results",
+              "required": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calendar-mcp",
+      "description": "MCP server for managing calendar events",
+      "commands": [
+        {
+          "name": "createEvent",
+          "description": "Create a new calendar event",
+          "arguments": [
+            {
+              "name": "title",
+              "type": "string",
+              "description": "Event title",
+              "required": true
+            },
+            {
+              "name": "startTime",
+              "type": "string",
+              "description": "Event start time",
+              "required": true
+            },
+            {
+              "name": "endTime",
+              "type": "string",
+              "description": "Event end time",
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

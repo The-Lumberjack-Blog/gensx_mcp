@@ -1,11 +1,18 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import React from 'react';
+import { ChatUI } from '@/components/ChatUI';
+import { Header } from '@/components/Header';
 
 const Index = () => {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-secondary/20">
+      <div className="flex justify-center w-full">
+        <div className="w-full max-w-3xl min-h-screen flex flex-col shadow-sm">
+          <Header />
+          <div className="flex-1 flex flex-col">
+            <ChatUI />
+          </div>
+        </div>
       </div>
     </div>
   );
