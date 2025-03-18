@@ -111,7 +111,7 @@ const callOpenAI = async (
 // Component to choose the appropriate MCP server
 export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPServerOutput>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
-    const logMessage = '_*Starting MCP server selection process...*_';
+    const logMessage = '🔍 *Starting MCP server selection process...*';
     console.log(logMessage);
     setLogs(logMessage);
     
@@ -136,12 +136,16 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       - reasoning: brief explanation of why this server was chosen
     `;
     
+    setLogs(`🧠 *Generating prompt for server selection...*`);
+    setLogs(`📤 *Sending request to LLM for server selection...*`);
+    
     const response = await callOpenAI(prompt, apiKey, true);
+    setLogs(`📥 *Received response from LLM for server selection*`);
     
     try {
       const result = JSON.parse(response);
-      const selectionLog = `_*MCP server selected: ${result.serverName}*_`;
-      const reasoningLog = `_*Selection reasoning: ${result.reasoning}*_`;
+      const selectionLog = `✅ *MCP server selected: ${result.serverName}*`;
+      const reasoningLog = `💡 *Selection reasoning: ${result.reasoning}*`;
       console.log(selectionLog);
       console.log(reasoningLog);
       setLogs(selectionLog);
@@ -149,9 +153,12 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       return result;
     } catch (e) {
       console.error('Failed to parse LLM response:', e);
+      setLogs(`⚠️ *Error parsing LLM response: ${e instanceof Error ? e.message : String(e)}*`);
+      setLogs(`📄 *Raw response: ${response}*`);
+      
       // Return the first server as fallback
       const firstServerName = Object.keys(mcpConfigs)[0];
-      const fallbackLog = `_*MCP server fallback: ${firstServerName}*_`;
+      const fallbackLog = `🔄 *MCP server fallback: ${firstServerName}*`;
       console.log(fallbackLog);
       setLogs(fallbackLog);
       return {
@@ -165,25 +172,25 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
 // Component to execute the MCP call
 export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
   async ({ serverName, chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
-    const executingLog = `_*Executing MCP call with server: ${serverName}*_`;
+    const executingLog = `🚀 *Executing MCP call with server: ${serverName}*`;
     console.log(executingLog);
     setLogs(executingLog);
     
     const serverConfig = mcpConfigs[serverName];
     
     if (!serverConfig) {
-      const errorLog = `_*Error: MCP server configuration not found for ${serverName}*_`;
+      const errorLog = `❌ *Error: MCP server configuration not found for ${serverName}*`;
       console.log(errorLog);
       setLogs(errorLog);
       return `Error: Could not find MCP server configuration for ${serverName}`;
     }
     
     const mcpContext = createMCPContext(serverConfig);
-    const contextLog = `_*MCP context created with config:*_`;
+    const contextLog = `🔧 *MCP context created with config:*`;
     console.log(contextLog);
     console.log(serverConfig);
     setLogs(contextLog);
-    setLogs(JSON.stringify(serverConfig, null, 2));
+    setLogs(`📋 *${JSON.stringify(serverConfig, null, 2)}*`);
     
     const prompt = `
       You have access to the ${serverName} MCP server with these commands:
@@ -199,9 +206,14 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
       Return a detailed explanation of what information you would retrieve from the server for this query.
     `;
     
+    setLogs(`🧠 *Generating prompt for MCP execution...*`);
+    setLogs(`📤 *Sending request to LLM for MCP execution...*`);
+    
     // In a real implementation, this would call LLM with MCP tools
     const response = await callOpenAI(prompt, apiKey);
-    const completionLog = `_*MCP execution completed with response length: ${response.length} characters*_`;
+    
+    setLogs(`📥 *Received response from LLM for MCP execution*`);
+    const completionLog = `✅ *MCP execution completed with response length: ${response.length} characters*`;
     console.log(completionLog);
     setLogs(completionLog);
     
@@ -212,7 +224,7 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
 // Component to format the final response
 export const FormatResponse = gensx.Component<FormatResponseProps, string>(
   async ({ chatHistory, latestMessage, mcpResult, apiKey, setLogs }) => {
-    const formattingLog = '_*Formatting final response based on MCP result...*_';
+    const formattingLog = '📝 *Formatting final response based on MCP result...*';
     console.log(formattingLog);
     setLogs(formattingLog);
     
@@ -230,8 +242,13 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
       Your response should incorporate the information from the MCP result in a helpful way.
     `;
     
+    setLogs(`🧠 *Generating prompt for response formatting...*`);
+    setLogs(`📤 *Sending request to LLM for response formatting...*`);
+    
     const response = await callOpenAI(prompt, apiKey);
-    const completeLog = '_*Response formatting complete*_';
+    
+    setLogs(`📥 *Received response from LLM for formatting*`);
+    const completeLog = '✅ *Response formatting complete*';
     console.log(completeLog);
     setLogs(completeLog);
     
@@ -242,8 +259,8 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
 // Main chatbot component
 export const Chatbot = gensx.Component<ChatbotProps, string>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
-    const startLog = '_*==== Starting Chatbot Process ====*_';
-    const messageLog = `_*Processing user message: "${latestMessage}"*_`;
+    const startLog = '🔄 *==== Starting Chatbot Process ====*';
+    const messageLog = `📝 *Processing user message: "${latestMessage}"*`;
     console.log(startLog);
     console.log(messageLog);
     setLogs(startLog);
@@ -258,8 +275,8 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
       setLogs
     });
     
-    const selectedLog = `_*Selected MCP server: ${serverName}*_`;
-    const reasoningLog = `_*Reasoning: ${reasoning}*_`;
+    const selectedLog = `🎯 *Selected MCP server: ${serverName}*`;
+    const reasoningLog = `💭 *Reasoning: ${reasoning}*`;
     console.log(selectedLog);
     console.log(reasoningLog);
     setLogs(selectedLog);
@@ -284,7 +301,7 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
       setLogs
     });
     
-    const completeLog = '_*==== Chatbot Process Complete ====*_';
+    const completeLog = '🏁 *==== Chatbot Process Complete ====*';
     console.log(completeLog);
     setLogs(completeLog);
     return response;
@@ -312,7 +329,7 @@ export const processMessage = async (
     });
   } catch (error) {
     console.error('Error processing message:', error);
-    setLogs('Error processing message: ' + (error instanceof Error ? error.message : String(error)));
+    setLogs(`❌ *Error processing message: ${error instanceof Error ? error.message : String(error)}*`);
     return 'Sorry, there was an error processing your request. Please check your API key and try again.';
   }
 };

@@ -17,7 +17,7 @@ export const ChatUI: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('openai_api_key'));
   const [logs, setLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(false);
+  const [showLogs, setShowLogs] = useState(true); // Changed to true by default
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -91,21 +91,30 @@ export const ChatUI: React.FC = () => {
         content: response
       };
 
-      // Show logs in system message if any
+      // Always include logs in a system message if logs are present
       if (logs.length > 0) {
-        setMessages(prev => [...prev, 
-          userMessage, 
-          {
-            role: 'system',
-            content: logs.join('\n')
-          },
-          assistantMessage
-        ]);
+        const systemMessage: Message = {
+          role: 'system',
+          content: logs.join('\n')
+        };
+        
+        setMessages(prev => [...prev, userMessage, systemMessage, assistantMessage]);
       } else {
         setMessages(prev => [...prev, userMessage, assistantMessage]);
       }
     } catch (error) {
       console.error('Error processing message:', error);
+      
+      // If there are logs, show them in a system message
+      if (logs.length > 0) {
+        const systemMessage: Message = {
+          role: 'system',
+          content: logs.join('\n')
+        };
+        
+        setMessages(prev => [...prev, userMessage, systemMessage]);
+      }
+      
       toast({
         title: 'Error',
         description: 'Failed to process your message. Please check your API key and try again.',
@@ -137,7 +146,7 @@ export const ChatUI: React.FC = () => {
     <div
       key={index}
       className={cn(
-        "py-3 px-4 rounded-2xl max-w-[85%] mb-4 animate-slide-up",
+        "py-3 px-4 rounded-2xl max-w-[90%] mb-4 animate-slide-up",
         message.role === 'assistant' 
           ? "bg-secondary/70 text-secondary-foreground mr-auto chat-message-in" 
           : message.role === 'system'
@@ -148,15 +157,15 @@ export const ChatUI: React.FC = () => {
       {message.role === 'system' ? (
         <div className="flex items-center mb-1">
           <Terminal size={12} className="mr-1" />
-          <span className="text-xs font-semibold">System Logs</span>
+          <span className="text-xs font-semibold">MCP Process Logs</span>
         </div>
       ) : null}
-      <p className={cn(
+      <div className={cn(
         "text-sm whitespace-pre-wrap",
         message.role === 'system' && "italic"
       )}>
         {message.content}
-      </p>
+      </div>
     </div>
   ));
 
@@ -193,7 +202,22 @@ export const ChatUI: React.FC = () => {
               <div className="w-2 h-2 rounded-full bg-primary/50 animate-pulse" style={{ animationDelay: '300ms' }}></div>
               <div className="w-2 h-2 rounded-full bg-primary/50 animate-pulse" style={{ animationDelay: '600ms' }}></div>
             </div>
-            <span className="text-xs text-muted-foreground">Assistant is typing...</span>
+            <span className="text-xs text-muted-foreground">Assistant is thinking...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Live logs display while processing */}
+      {isLoading && logs.length > 0 && (
+        <div className="px-4 pb-4 bg-muted/10 border-t border-border/30">
+          <div className="flex items-center mb-2 mt-2">
+            <Terminal size={14} className="mr-1 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground">Live Process Logs</span>
+          </div>
+          <div className="max-h-32 overflow-y-auto text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+            {logs.map((log, i) => (
+              <div key={i} className="mb-1">{log}</div>
+            ))}
           </div>
         </div>
       )}
