@@ -1,3 +1,4 @@
+
 import gensx from './gensx';
 import { MCPConfig, createMCPContext } from './mcp';
 
@@ -6,7 +7,7 @@ export interface Message {
   content: string;
 }
 
-interface ChooseMCPServerProps {
+interface EvaluateQueryProps {
   chatHistory: Message[];
   latestMessage: string;
   mcpConfigs: Record<string, any>;
@@ -14,8 +15,9 @@ interface ChooseMCPServerProps {
   setLogs: (log: string) => void;
 }
 
-interface ChooseMCPServerOutput {
-  serverName: string;
+interface EvaluateQueryOutput {
+  needsMCP: boolean;
+  serverName?: string;
   reasoning: string;
 }
 
@@ -24,6 +26,13 @@ interface ExecuteMCPCallProps {
   chatHistory: Message[];
   latestMessage: string;
   mcpConfigs: Record<string, any>;
+  apiKey: string | null;
+  setLogs: (log: string) => void;
+}
+
+interface GenerateDirectResponseProps {
+  chatHistory: Message[];
+  latestMessage: string;
   apiKey: string | null;
   setLogs: (log: string) => void;
 }
@@ -68,7 +77,7 @@ const callOpenAI = async (
           {
             role: 'system',
             content: useJson 
-              ? 'You are a helpful assistant that responds in valid JSON format. Make sure your response is properly formatted JSON that can be parsed with JSON.parse(). Always include the property names in double quotes. DO NOT include markdown code blocks in your response.' 
+              ? 'You are a helpful assistant that responds in valid JSON format. Your response must be properly formatted JSON that can be parsed with JSON.parse(). Always include the property names in double quotes. DO NOT include markdown code blocks or any formatting in your response - just pure JSON.' 
               : 'You are a helpful assistant.'
           },
           {
@@ -114,10 +123,10 @@ const callOpenAI = async (
             // Log the raw response for debugging
             console.error('Raw response:', resultText);
             
-            // Return the raw match for manual inspection
+            // Return a fallback that indicates not to use MCP
             return {
-              serverName: "sequential-thinking",
-              reasoning: "Fallback selection due to JSON parsing error. Raw response: " + resultText.substring(0, 100)
+              needsMCP: false,
+              reasoning: "Fallback due to JSON parsing error. Raw response: " + resultText.substring(0, 100)
             };
           }
         }
@@ -125,8 +134,8 @@ const callOpenAI = async (
         // If we couldn't extract valid JSON, return a fallback
         console.error('Failed to parse response as JSON, returning fallback');
         return {
-          serverName: "sequential-thinking",
-          reasoning: "Fallback selection due to JSON parsing error. No JSON pattern found."
+          needsMCP: false,
+          reasoning: "Fallback due to JSON parsing error. No JSON pattern found."
         };
       }
     }
@@ -137,20 +146,18 @@ const callOpenAI = async (
     
     if (useJson) {
       return {
-        serverName: "sequential-thinking",
-        reasoning: `Selected sequential-thinking because it's the most reliable fallback option. Error: ${error instanceof Error ? error.message : String(error)}`
+        needsMCP: false,
+        reasoning: `Fallback due to error: ${error instanceof Error ? error.message : String(error)}`
       };
-    } else if (prompt.includes('execute MCP call')) {
-      return `Result from MCP server: Here's the information you requested about "${prompt.split(' ').slice(-3).join(' ')}"`;
     } else {
-      return `Based on the MCP server results, I can provide you with information about "${prompt.split(' ').slice(-5).join(' ')}"`;
+      return `I apologize, but I encountered an error while processing your request. Could you try rephrasing your question?`;
     }
   }
 };
 
-export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPServerOutput>(
+export const EvaluateQuery = gensx.Component<EvaluateQueryProps, EvaluateQueryOutput>(
   async ({ chatHistory, latestMessage, mcpConfigs, apiKey, setLogs }) => {
-    const logMessage = '🔍 *Starting MCP server selection process...*';
+    const logMessage = '🔍 *Starting query evaluation process...*';
     console.log(logMessage);
     setLogs(logMessage);
     
@@ -159,7 +166,7 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
     ).join('\n');
     
     const prompt = `
-      Given the following chat history and latest message, choose the most appropriate MCP server to handle the request.
+      Given the following chat history and latest message, determine if an MCP server is needed to handle the request.
       
       Chat History:
       ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
@@ -169,42 +176,90 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       Available MCP Servers:
       ${serverDescriptions}
       
-      Return a JSON object with:
-      - serverName: the name of the chosen server
-      - reasoning: brief explanation of why this server was chosen
+      First, determine if this query requires accessing external data or services via an MCP server.
+      If the query is a simple greeting, general question, chitchat, or can be answered with your general knowledge, NO MCP server is needed.
+      If the query requires specific data access, external API calls, or integration with specialized tools, an MCP server IS needed.
       
-      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse(). DO NOT wrap your response in markdown code blocks or any other formatting.
+      Return a JSON object with:
+      - needsMCP: boolean indicating if an MCP server is needed (true/false)
+      - serverName: (only if needsMCP is true) name of the chosen server
+      - reasoning: brief explanation of your decision
+      
+      IMPORTANT: Return ONLY a valid JSON object that can be parsed with JSON.parse().
     `;
     
-    setLogs(`🧠 *Generating prompt for server selection...*`);
-    setLogs(`📤 *Sending request to LLM for server selection...*`);
+    setLogs(`🧠 *Generating prompt for query evaluation...*`);
+    setLogs(`📤 *Sending request to LLM for query evaluation...*`);
     
     try {
       const response = await callOpenAI(prompt, apiKey, true);
-      setLogs(`📥 *Received response from LLM for server selection*`);
+      setLogs(`📥 *Received response from LLM for query evaluation*`);
       
       const result = response;
       
-      const selectionLog = `✅ *MCP server selected: ${result.serverName}*`;
-      const reasoningLog = `💡 *Selection reasoning: ${result.reasoning}*`;
-      console.log(selectionLog);
+      const evaluationLog = `✅ *Query evaluation complete: ${result.needsMCP ? "Needs MCP" : "No MCP needed"}*`;
+      const reasoningLog = `💭 *Reasoning: ${result.reasoning}*`;
+      
+      console.log(evaluationLog);
       console.log(reasoningLog);
-      setLogs(selectionLog);
+      setLogs(evaluationLog);
       setLogs(reasoningLog);
+      
+      if (result.needsMCP && !result.serverName && Object.keys(mcpConfigs).length > 0) {
+        // If MCP is needed but no server was specified, use the first available server
+        const firstServerName = Object.keys(mcpConfigs)[0];
+        result.serverName = firstServerName;
+        setLogs(`ℹ️ *No specific server selected, using default: ${firstServerName}*`);
+      }
+      
       return result;
     } catch (e) {
-      const errorLog = `⚠️ *Error during server selection: ${e instanceof Error ? e.message : String(e)}*`;
+      const errorLog = `⚠️ *Error during query evaluation: ${e instanceof Error ? e.message : String(e)}*`;
       console.error(errorLog);
       setLogs(errorLog);
       
-      const firstServerName = Object.keys(mcpConfigs)[0];
-      const fallbackLog = `🔄 *MCP server fallback: ${firstServerName}*`;
-      console.log(fallbackLog);
-      setLogs(fallbackLog);
       return {
-        serverName: firstServerName,
-        reasoning: 'Fallback to default server due to parsing error'
+        needsMCP: false,
+        reasoning: 'Error during evaluation, falling back to direct response'
       };
+    }
+  }
+);
+
+export const GenerateDirectResponse = gensx.Component<GenerateDirectResponseProps, string>(
+  async ({ chatHistory, latestMessage, apiKey, setLogs }) => {
+    const generatingLog = `🖋️ *Generating direct response without MCP...*`;
+    console.log(generatingLog);
+    setLogs(generatingLog);
+    
+    const prompt = `
+      Given the following chat history and latest message, provide a helpful response.
+      
+      Chat History:
+      ${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+      
+      Latest Message: ${latestMessage}
+      
+      Provide a helpful, natural-sounding response to the user's message.
+    `;
+    
+    setLogs(`🧠 *Generating prompt for direct response...*`);
+    setLogs(`📤 *Sending request to LLM for direct response...*`);
+    
+    try {
+      const response = await callOpenAI(prompt, apiKey);
+      
+      setLogs(`📥 *Received direct response (${response.length} chars)*`);
+      const snippetLog = `📄 *Response snippet: "${response.substring(0, 50)}..."*`;
+      console.log(snippetLog);
+      setLogs(snippetLog);
+      
+      return response;
+    } catch (error) {
+      const errorMessage = `❌ *Error generating direct response: ${error instanceof Error ? error.message : String(error)}*`;
+      console.error(errorMessage);
+      setLogs(errorMessage);
+      return `I apologize, but I encountered an error while processing your request. Could you try rephrasing your question?`;
     }
   }
 );
@@ -320,8 +375,8 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
     setLogs(messageLog);
     
     try {
-      setLogs(`⚙️ *STEP 1: Selecting appropriate MCP server...*`);
-      const { serverName, reasoning } = await ChooseMCPServer({
+      setLogs(`⚙️ *STEP 1: Evaluating if MCP is needed...*`);
+      const { needsMCP, serverName, reasoning } = await EvaluateQuery({
         chatHistory,
         latestMessage,
         mcpConfigs,
@@ -329,31 +384,50 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
         setLogs
       });
       
-      const selectedLog = `🎯 *Selected MCP server: ${serverName}*`;
-      const reasoningLog = `💭 *Reasoning: ${reasoning}*`;
-      console.log(selectedLog);
-      console.log(reasoningLog);
-      setLogs(selectedLog);
-      setLogs(reasoningLog);
+      let response;
       
-      setLogs(`⚙️ *STEP 2: Executing MCP call with ${serverName}...*`);
-      const mcpResult = await ExecuteMCPCall({
-        serverName,
-        chatHistory,
-        latestMessage,
-        mcpConfigs,
-        apiKey,
-        setLogs
-      });
-      
-      setLogs(`⚙️ *STEP 3: Formatting final response...*`);
-      const response = await FormatResponse({
-        chatHistory,
-        latestMessage,
-        mcpResult,
-        apiKey,
-        setLogs
-      });
+      if (needsMCP && serverName) {
+        const selectedLog = `🎯 *MCP needed - Selected server: ${serverName}*`;
+        const reasoningLog = `💭 *Reasoning: ${reasoning}*`;
+        console.log(selectedLog);
+        console.log(reasoningLog);
+        setLogs(selectedLog);
+        setLogs(reasoningLog);
+        
+        setLogs(`⚙️ *STEP 2: Executing MCP call with ${serverName}...*`);
+        const mcpResult = await ExecuteMCPCall({
+          serverName,
+          chatHistory,
+          latestMessage,
+          mcpConfigs,
+          apiKey,
+          setLogs
+        });
+        
+        setLogs(`⚙️ *STEP 3: Formatting response with MCP results...*`);
+        response = await FormatResponse({
+          chatHistory,
+          latestMessage,
+          mcpResult,
+          apiKey,
+          setLogs
+        });
+      } else {
+        const directLog = `🎯 *No MCP needed - Generating direct response*`;
+        const reasoningLog = `💭 *Reasoning: ${reasoning}*`;
+        console.log(directLog);
+        console.log(reasoningLog);
+        setLogs(directLog);
+        setLogs(reasoningLog);
+        
+        setLogs(`⚙️ *STEP 2: Generating direct response without MCP...*`);
+        response = await GenerateDirectResponse({
+          chatHistory,
+          latestMessage,
+          apiKey,
+          setLogs
+        });
+      }
       
       const completeLog = '🏁 *==== Chatbot Process Complete ====*';
       console.log(completeLog);
