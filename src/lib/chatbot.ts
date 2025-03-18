@@ -11,6 +11,7 @@ interface ChooseMCPServerProps {
   chatHistory: Message[];
   latestMessage: string;
   mcpConfigs: MCPConfig[];
+  apiKey: string | null;
 }
 
 interface ChooseMCPServerOutput {
@@ -23,41 +24,89 @@ interface ExecuteMCPCallProps {
   chatHistory: Message[];
   latestMessage: string;
   mcpConfigs: MCPConfig[];
+  apiKey: string | null;
 }
 
 interface FormatResponseProps {
   chatHistory: Message[];
   latestMessage: string;
   mcpResult: string;
+  apiKey: string | null;
 }
 
 interface ChatbotProps {
   chatHistory: Message[];
   latestMessage: string;
   mcpConfigs: MCPConfig[];
+  apiKey: string | null;
 }
 
-// Mock LLM call function for demo purposes
-const mockLLMCall = async (prompt: string): Promise<string> => {
+// LLM call function that uses OpenAI API
+const callOpenAI = async (
+  prompt: string, 
+  apiKey: string | null, 
+  useJson: boolean = false
+): Promise<string> => {
+  if (!apiKey) {
+    throw new Error("OpenAI API key is required");
+  }
+
   console.log('LLM Prompt:', prompt);
   
-  // Simulate different responses based on the prompt
-  if (prompt.includes('choose MCP server')) {
-    const randomServer = ['weather-mcp', 'search-mcp', 'calendar-mcp'][Math.floor(Math.random() * 3)];
-    return JSON.stringify({
-      serverName: randomServer,
-      reasoning: `Selected ${randomServer} because it's the most relevant for this query.`
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',  // Using a more affordable model for most operations
+        messages: [
+          {
+            role: 'system',
+            content: useJson 
+              ? 'You are a helpful assistant that responds in valid JSON format.' 
+              : 'You are a helpful assistant.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: useJson ? 0.1 : 0.7, // Lower temperature for JSON responses
+        max_tokens: 1000
+      })
     });
-  } else if (prompt.includes('execute MCP call')) {
-    return `Result from MCP server: Here's the information you requested.`;
-  } else {
-    return `Based on the MCP server results, I can tell you that ${prompt.split(' ').slice(-5).join(' ')}`;
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error calling OpenAI:', error);
+    
+    // Fallback to mock response for demo purposes
+    if (useJson && prompt.includes('choose MCP server')) {
+      const randomServer = ['weather-mcp', 'search-mcp', 'calendar-mcp'][Math.floor(Math.random() * 3)];
+      return JSON.stringify({
+        serverName: randomServer,
+        reasoning: `Selected ${randomServer} because it's the most relevant for this query.`
+      });
+    } else if (prompt.includes('execute MCP call')) {
+      return `Result from MCP server: Here's the information you requested about "${prompt.split(' ').slice(-3).join(' ')}"`;
+    } else {
+      return `Based on the MCP server results, I can provide you with information about "${prompt.split(' ').slice(-5).join(' ')}"`;
+    }
   }
 };
 
 // Component to choose the appropriate MCP server
 export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPServerOutput>(
-  async ({ chatHistory, latestMessage, mcpConfigs }) => {
+  async ({ chatHistory, latestMessage, mcpConfigs, apiKey }) => {
     const prompt = `
       Given the following chat history and latest message, choose the most appropriate MCP server to handle the request.
       
@@ -74,8 +123,7 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
       - reasoning: brief explanation of why this server was chosen
     `;
     
-    // In a real implementation, this would call GPT-4o or similar
-    const response = await mockLLMCall(prompt);
+    const response = await callOpenAI(prompt, apiKey, true);
     
     try {
       return JSON.parse(response);
@@ -91,7 +139,7 @@ export const ChooseMCPServer = gensx.Component<ChooseMCPServerProps, ChooseMCPSe
 
 // Component to execute the MCP call
 export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
-  async ({ serverName, chatHistory, latestMessage, mcpConfigs }) => {
+  async ({ serverName, chatHistory, latestMessage, mcpConfigs, apiKey }) => {
     const serverConfig = mcpConfigs.find(config => config.name === serverName);
     
     if (!serverConfig) {
@@ -111,20 +159,19 @@ export const ExecuteMCPCall = gensx.Component<ExecuteMCPCallProps, string>(
       
       Latest Message: ${latestMessage}
       
-      Return the command name and arguments as a JSON object.
+      Return a detailed explanation of what information you would retrieve from the server for this query.
     `;
     
     // In a real implementation, this would call LLM with MCP tools
-    const response = await mockLLMCall(`execute MCP call for ${serverName} with message: ${latestMessage}`);
+    const response = await callOpenAI(prompt, apiKey);
     
-    // Mock response for demonstration
     return response;
   }
 );
 
 // Component to format the final response
 export const FormatResponse = gensx.Component<FormatResponseProps, string>(
-  async ({ chatHistory, latestMessage, mcpResult }) => {
+  async ({ chatHistory, latestMessage, mcpResult, apiKey }) => {
     const prompt = `
       Given the chat history, latest user message, and the result from the MCP server, 
       format a helpful, natural-sounding response to the user.
@@ -139,8 +186,7 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
       Your response should incorporate the information from the MCP result in a helpful way.
     `;
     
-    // In a real implementation, this would call GPT-4o or similar
-    const response = await mockLLMCall(`format response for: ${latestMessage} with MCP result: ${mcpResult}`);
+    const response = await callOpenAI(prompt, apiKey);
     
     return response;
   }
@@ -148,12 +194,13 @@ export const FormatResponse = gensx.Component<FormatResponseProps, string>(
 
 // Main chatbot component
 export const Chatbot = gensx.Component<ChatbotProps, string>(
-  async ({ chatHistory, latestMessage, mcpConfigs }) => {
+  async ({ chatHistory, latestMessage, mcpConfigs, apiKey }) => {
     // Step 1: Choose the appropriate MCP server
     const { serverName, reasoning } = await ChooseMCPServer({
       chatHistory,
       latestMessage,
-      mcpConfigs
+      mcpConfigs,
+      apiKey
     });
     
     console.log(`Selected MCP server: ${serverName}`);
@@ -164,14 +211,16 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
       serverName,
       chatHistory,
       latestMessage,
-      mcpConfigs
+      mcpConfigs,
+      apiKey
     });
     
     // Step 3: Format the response
     const response = await FormatResponse({
       chatHistory,
       latestMessage,
-      mcpResult
+      mcpResult,
+      apiKey
     });
     
     return response;
@@ -181,7 +230,8 @@ export const Chatbot = gensx.Component<ChatbotProps, string>(
 // Helper function to process a new message
 export const processMessage = async (
   chatHistory: Message[],
-  latestMessage: string
+  latestMessage: string,
+  apiKey: string | null
 ): Promise<string> => {
   try {
     // In a real app, we would fetch the config from the server
@@ -191,10 +241,11 @@ export const processMessage = async (
     return await Chatbot({
       chatHistory,
       latestMessage,
-      mcpConfigs: mcpServers
+      mcpConfigs: mcpServers,
+      apiKey
     });
   } catch (error) {
     console.error('Error processing message:', error);
-    return 'Sorry, there was an error processing your request. Please try again.';
+    return 'Sorry, there was an error processing your request. Please check your API key and try again.';
   }
 };

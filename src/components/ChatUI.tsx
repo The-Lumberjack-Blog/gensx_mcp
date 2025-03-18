@@ -2,8 +2,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, processMessage } from '@/lib/chatbot';
 import { cn } from '@/lib/utils';
-import { Send, Info, ArrowDown } from 'lucide-react';
+import { Send, Info, ArrowDown, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { ApiKeyInput } from './ApiKeyInput';
 
 export const ChatUI: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -14,6 +15,7 @@ export const ChatUI: React.FC = () => {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('openai_api_key'));
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -43,6 +45,19 @@ export const ChatUI: React.FC = () => {
     }
   }, []);
 
+  const handleApiKeySubmit = (key: string) => {
+    setApiKey(key);
+  };
+
+  const handleRemoveApiKey = () => {
+    localStorage.removeItem('openai_api_key');
+    setApiKey(null);
+    toast({
+      title: 'API Key Removed',
+      description: 'Your OpenAI API key has been removed from your browser.',
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -58,7 +73,7 @@ export const ChatUI: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const response = await processMessage(messages, userMessage.content);
+      const response = await processMessage(messages, userMessage.content, apiKey);
       
       const assistantMessage: Message = {
         role: 'assistant',
@@ -70,7 +85,7 @@ export const ChatUI: React.FC = () => {
       console.error('Error processing message:', error);
       toast({
         title: 'Error',
-        description: 'Failed to process your message. Please try again.',
+        description: 'Failed to process your message. Please check your API key and try again.',
         variant: 'destructive'
       });
     } finally {
@@ -90,6 +105,10 @@ export const ChatUI: React.FC = () => {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   };
+
+  if (!apiKey) {
+    return <ApiKeyInput onApiKeySubmit={handleApiKeySubmit} />;
+  }
 
   const messageElements = messages.map((message, index) => (
     <div
@@ -174,7 +193,7 @@ export const ChatUI: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex justify-center mt-2">
+        <div className="flex justify-between mt-2">
           <button
             type="button"
             onClick={() => toast({
@@ -185,6 +204,15 @@ export const ChatUI: React.FC = () => {
           >
             <Info size={12} className="mr-1" />
             About this chatbot
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleRemoveApiKey}
+            className="flex items-center text-xs text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <Key size={12} className="mr-1" />
+            Remove API key
           </button>
         </div>
       </form>
